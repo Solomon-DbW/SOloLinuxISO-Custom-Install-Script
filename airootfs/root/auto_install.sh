@@ -38,38 +38,10 @@ done
 read -p "Select install disk (index): " DISKIDX
 DISK="/dev/${DISKS[$DISKIDX]}"
 echo "Selected: $DISK"
-
-### ==========================================
-### DUAL BOOT CHECK
-### ==========================================
-echo ""
-echo "[+] Checking for existing operating systems..."
-EXISTING_OS=$(os-prober 2>/dev/null || true)
-if [[ -n "$EXISTING_OS" ]]; then
-  echo "Found existing operating system(s):"
-  echo "$EXISTING_OS"
-  echo ""
-  read -p "Do you want to KEEP these and dual-boot? [y/N]: " DUALBOOT
-  DUALBOOT=${DUALBOOT,,}
-  if [[ "$DUALBOOT" == "y" ]]; then
-    echo "Dual-boot mode enabled. Existing partitions will be preserved."
-    WIPE_DISK="no"
-  else
-    read -p "WARNING: ALL DATA on $DISK WILL BE ERASED. Type 'WIPE' to continue: " CONFIRM
-    if [[ "$CONFIRM" != "WIPE" ]]; then
-      echo "Aborted."
-      exit 1
-    fi
-    WIPE_DISK="yes"
-  fi
-else
-  echo "No existing operating systems detected."
-  read -p "WARNING: ALL DATA on $DISK WILL BE ERASED. Type 'WIPE' to continue: " CONFIRM
-  if [[ "$CONFIRM" != "WIPE" ]]; then
-    echo "Aborted."
-    exit 1
-  fi
-  WIPE_DISK="yes"
+read -p "WARNING: ALL DATA on $DISK WILL BE ERASED. Type 'WIPE' to continue: " CONFIRM
+if [[ "$CONFIRM" != "WIPE" ]]; then
+  echo "Aborted."
+  exit 1
 fi
 ### ==========================================
 ### USER CONFIG PROMPT
@@ -104,112 +76,36 @@ ENCRYPT=${ENCRYPT,,} # to lowercase
 ### PARTITION DISK
 ### ==========================================
 echo "[+] Partitioning $DISK ..."
-
-if [[ "$WIPE_DISK" == "yes" ]]; then
-  # Full wipe - create new partition table
-  if [[ "$BOOTMODE" == "UEFI" ]]; then
-    parted --script "$DISK" mklabel gpt
-    parted --script "$DISK" mkpart ESP fat32 1MiB 301MiB
-    parted --script "$DISK" set 1 boot on
-    parted --script "$DISK" mkpart primary linux-swap 301MiB 4297MiB
-    parted --script "$DISK" mkpart primary ext4 4297MiB 100%
-    # Handle partition naming for both /dev/sdX and /dev/nvmeXnY
-    if [[ "$DISK" =~ "nvme" ]]; then
-      PESP="${DISK}p1"
-      PSWAP="${DISK}p2"
-      PROOT="${DISK}p3"
-    else
-      PESP="${DISK}1"
-      PSWAP="${DISK}2"
-      PROOT="${DISK}3"
-    fi
+if [[ "$BOOTMODE" == "UEFI" ]]; then
+  parted --script "$DISK" mklabel gpt
+  parted --script "$DISK" mkpart ESP fat32 1MiB 301MiB
+  parted --script "$DISK" set 1 boot on
+  parted --script "$DISK" mkpart primary linux-swap 301MiB 4297MiB
+  parted --script "$DISK" mkpart primary ext4 4297MiB 100%
+  # Handle partition naming for both /dev/sdX and /dev/nvmeXnY
+  if [[ "$DISK" =~ "nvme" ]]; then
+    PESP="${DISK}p1"
+    PSWAP="${DISK}p2"
+    PROOT="${DISK}p3"
   else
-    parted --script "$DISK" mklabel msdos
-    parted --script "$DISK" mkpart primary ext4 1MiB 101MiB
-    parted --script "$DISK" set 1 boot on
-    parted --script "$DISK" mkpart primary linux-swap 101MiB 4197MiB
-    parted --script "$DISK" mkpart primary ext4 4197MiB 100%
-    if [[ "$DISK" =~ "nvme" ]]; then
-      P1="${DISK}p1"
-      PSWAP="${DISK}p2"
-      PROOT="${DISK}p3"
-    else
-      P1="${DISK}1"
-      PSWAP="${DISK}2"
-      PROOT="${DISK}3"
-    fi
+    PESP="${DISK}1"
+    PSWAP="${DISK}2"
+    PROOT="${DISK}3"
   fi
 else
-  # Dual-boot mode - use existing partitions or create new ones
-  echo ""
-  echo "Current partition layout:"
-  lsblk "$DISK"
-  echo ""
-  
-  if [[ "$BOOTMODE" == "UEFI" ]]; then
-    # Look for existing ESP
-    ESP_CANDIDATES=$(lsblk -nlo NAME,PARTTYPE "$DISK" | grep -i "c12a7328-f81f-11d2-ba4b-00a0c93ec93b" | awk '{print $1}' || true)
-    if [[ -n "$ESP_CANDIDATES" ]]; then
-      PESP="/dev/$(echo "$ESP_CANDIDATES" | head -n1)"
-      echo "[*] Using existing ESP: $PESP"
-    else
-      echo "[!] No ESP found. Creating new ESP partition..."
-      LAST_PART=$(parted "$DISK" print | grep "^ " | tail -n1 | awk '{print $1}')
-      END_SECTOR=$(parted "$DISK" unit MiB print | grep "^ $LAST_PART" | awk '{print $3}' | sed 's/MiB//')
-      NEW_START=$((END_SECTOR))
-      parted --script "$DISK" mkpart ESP fat32 ${NEW_START}MiB $((NEW_START + 300))MiB
-      parted --script "$DISK" set $((LAST_PART + 1)) boot on
-      if [[ "$DISK" =~ "nvme" ]]; then
-        PESP="${DISK}p$((LAST_PART + 1))"
-      else
-        PESP="${DISK}$((LAST_PART + 1))"
-      fi
-      mkfs.fat -F32 "$PESP"
-    fi
-  else
-    # BIOS mode - look for boot partition or create one
-    BOOT_PART=$(lsblk -nlo NAME,PARTFLAGS "$DISK" | grep "boot" | awk '{print $1}' | head -n1 || true)
-    if [[ -n "$BOOT_PART" ]]; then
-      P1="/dev/$BOOT_PART"
-      echo "[*] Using existing boot partition: $P1"
-    else
-      echo "[!] No boot partition found. Creating new one..."
-      LAST_PART=$(parted "$DISK" print | grep "^ " | tail -n1 | awk '{print $1}')
-      END_SECTOR=$(parted "$DISK" unit MiB print | grep "^ $LAST_PART" | awk '{print $3}' | sed 's/MiB//')
-      NEW_START=$((END_SECTOR))
-      parted --script "$DISK" mkpart primary ext4 ${NEW_START}MiB $((NEW_START + 100))MiB
-      parted --script "$DISK" set $((LAST_PART + 1)) boot on
-      if [[ "$DISK" =~ "nvme" ]]; then
-        P1="${DISK}p$((LAST_PART + 1))"
-      else
-        P1="${DISK}$((LAST_PART + 1))"
-      fi
-      mkfs.ext4 "$P1"
-    fi
-  fi
-  
-  # Create swap partition
-  echo "[+] Creating swap partition..."
-  LAST_PART=$(parted "$DISK" print | grep "^ " | tail -n1 | awk '{print $1}')
-  END_SECTOR=$(parted "$DISK" unit MiB print | grep "^ $LAST_PART" | awk '{print $3}' | sed 's/MiB//')
-  NEW_START=$((END_SECTOR))
-  parted --script "$DISK" mkpart primary linux-swap ${NEW_START}MiB $((NEW_START + 4096))MiB
+  parted --script "$DISK" mklabel msdos
+  parted --script "$DISK" mkpart primary ext4 1MiB 101MiB
+  parted --script "$DISK" set 1 boot on
+  parted --script "$DISK" mkpart primary linux-swap 101MiB 4197MiB
+  parted --script "$DISK" mkpart primary ext4 4197MiB 100%
   if [[ "$DISK" =~ "nvme" ]]; then
-    PSWAP="${DISK}p$((LAST_PART + 1))"
+    P1="${DISK}p1"
+    PSWAP="${DISK}p2"
+    PROOT="${DISK}p3"
   else
-    PSWAP="${DISK}$((LAST_PART + 1))"
-  fi
-  
-  # Create root partition
-  echo "[+] Creating root partition..."
-  LAST_PART=$(parted "$DISK" print | grep "^ " | tail -n1 | awk '{print $1}')
-  END_SECTOR=$(parted "$DISK" unit MiB print | grep "^ $LAST_PART" | awk '{print $3}' | sed 's/MiB//')
-  NEW_START=$((END_SECTOR))
-  parted --script "$DISK" mkpart primary ext4 ${NEW_START}MiB 100%
-  if [[ "$DISK" =~ "nvme" ]]; then
-    PROOT="${DISK}p$((LAST_PART + 1))"
-  else
-    PROOT="${DISK}$((LAST_PART + 1))"
+    P1="${DISK}1"
+    PSWAP="${DISK}2"
+    PROOT="${DISK}3"
   fi
 fi
 ### ==========================================
@@ -217,15 +113,9 @@ fi
 ### ==========================================
 set -e
 if [[ "$BOOTMODE" == "UEFI" ]]; then
-  # Only format ESP if we created it new
-  if [[ "$WIPE_DISK" == "yes" ]]; then
-    mkfs.fat -F32 "$PESP"
-  fi
+  mkfs.fat -F32 "$PESP"
 else
-  # Only format boot if we created it new
-  if [[ "$WIPE_DISK" == "yes" ]]; then
-    mkfs.ext4 "$P1"
-  fi
+  mkfs.ext4 "$P1"
 fi
 mkswap "$PSWAP"
 if [[ "$ENCRYPT" == y ]]; then
@@ -253,7 +143,7 @@ swapon "$PSWAP"
 ### INSTALL ARCH BASE
 ### ==========================================
 echo "[+] Installing base system..."
-pacstrap /mnt base linux linux-firmware grub efibootmgr sudo networkmanager nano vim os-prober
+pacstrap /mnt base linux linux-firmware grub efibootmgr sudo networkmanager nano vim
 ### ==========================================
 ### FSTAB GENERATION
 ### ==========================================
@@ -297,9 +187,6 @@ fi
 
 systemctl enable NetworkManager
 
-# Enable os-prober for dual-boot detection
-echo "GRUB_DISABLE_OS_PROBER=false" >> /etc/default/grub
-
 # Configure encryption if enabled
 if [[ "\$ENCRYPT" == "y" ]]; then
   ROOTUUID=\$(blkid -s UUID -o value "\$PROOT")
@@ -317,66 +204,22 @@ ID=sololinux
 ID_LIKE=arch
 BUILD_ID=rolling
 ANSI_COLOR="0;38;2;37;104;151"
-HOME_URL="https://github.com/Solomon-DbW/SoloLinuxISO-With-Custom-Install-Script"
-DOCUMENTATION_URL="https://github.com/Solomon-DbW/SoloLinuxISO-With-Custom-Install-Script"
-SUPPORT_URL="https://github.com/Solomon-DbW/SoloLinuxISO-With-Custom-Install-Script"
-BUG_REPORT_URL="https://github.com/Solomon-DbW/SoloLinuxISO-With-Custom-Install-Script/-/issues"
-PRIVACY_POLICY_URL="https://github.com/Solomon-DbW/SoloLinuxISO-With-Custom-Install-Script"
+HOME_URL="https://archlinux.org/"
+DOCUMENTATION_URL="https://wiki.archlinux.org/"
+SUPPORT_URL="https://bbs.archlinux.org/"
+BUG_REPORT_URL="https://gitlab.archlinux.org/groups/archlinux/-/issues"
+PRIVACY_POLICY_URL="https://terms.archlinux.org/docs/privacy-policy/"
 LOGO=archlinux-logo
 OS_RELEASE_EOF
 
 # Create symlink as some tools check /usr/lib/os-release
 ln -sf /etc/os-release /usr/lib/os-release
 
-# ======================
-# GRUB: Show SoloLinux Branding
-# ======================
-
-# Use grub's custom config text to change name shown in menu from 'Arch Linux' to 'SoloLinux'
-# Post-process main entry in grub.cfg if generated with default name
-GRUB_CFG="/boot/grub/grub.cfg"
-if [[ -f "\$GRUB_CFG" ]]; then
-  sed -i 's/Arch Linux/SoloLinux/g' "\$GRUB_CFG"
-fi
-
-# To catch regeneration of grub.cfg, also define via custom /etc/grub.d scripts:
-# Patch /etc/grub.d/10_linux
-if grep -q 'Arch Linux' /etc/grub.d/10_linux; then
-  sed -i 's/Arch Linux/SoloLinux/g' /etc/grub.d/10_linux
-fi
-
-# You can also set a custom distro name for GRUB menu entries:
-if grep -q '^GRUB_DISTRIBUTOR=' /etc/default/grub; then
-  sed -i 's/^GRUB_DISTRIBUTOR=.*/GRUB_DISTRIBUTOR="SoloLinux"/' /etc/default/grub
-else
-  echo 'GRUB_DISTRIBUTOR="SoloLinux"' >> /etc/default/grub
-fi
-
-# ======================
-# systemd: show SoloLinux in boot logs & getty
-# ======================
-# patch /etc/issue if present
-echo "Welcome to SoloLinux \\\\n \\\\l" > /etc/issue
-
-# Create a custom /etc/motd
-echo "Welcome to SoloLinux!" > /etc/motd
-
-# patch /etc/systemd/system.conf to set the default system information
-if grep -q '^Caption=' /etc/systemd/system.conf; then
-  sed -i 's/^Caption=.*/Caption=SoloLinux/' /etc/systemd/system.conf
-else
-  echo 'Caption=SoloLinux' >> /etc/systemd/system.conf
-fi
-
 if [[ "\$BOOTMODE" == "UEFI" ]]; then
   grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB
 else
   grub-install --target=i386-pc "\$DISK"
 fi
-
-# Run os-prober to detect other operating systems
-echo "[+] Detecting other operating systems..."
-os-prober || true
 
 grub-mkconfig -o /boot/grub/grub.cfg
 CHROOT_EOF
@@ -406,4 +249,4 @@ fi
 echo "===================================="
 echo ""
 echo "You can now reboot into your new system."
-echo "Run: reboot"
+echo "Run: reboot now"
