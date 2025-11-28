@@ -317,11 +317,11 @@ ID=sololinux
 ID_LIKE=arch
 BUILD_ID=rolling
 ANSI_COLOR="0;38;2;37;104;151"
-HOME_URL="https://archlinux.org/"
-DOCUMENTATION_URL="https://wiki.archlinux.org/"
-SUPPORT_URL="https://bbs.archlinux.org/"
-BUG_REPORT_URL="https://gitlab.archlinux.org/groups/archlinux/-/issues"
-PRIVACY_POLICY_URL="https://terms.archlinux.org/docs/privacy-policy/"
+HOME_URL="https://github.com/Solomon-DbW/SoloLinuxISO-With-Custom-Install-Script"
+DOCUMENTATION_URL="https://github.com/Solomon-DbW/SoloLinuxISO-With-Custom-Install-Script"
+SUPPORT_URL="https://github.com/Solomon-DbW/SoloLinuxISO-With-Custom-Install-Script"
+BUG_REPORT_URL="https://github.com/Solomon-DbW/SoloLinuxISO-With-Custom-Install-Script/-/issues"
+PRIVACY_POLICY_URL="https://github.com/Solomon-DbW/SoloLinuxISO-With-Custom-Install-Script"
 LOGO=archlinux-logo
 OS_RELEASE_EOF
 
