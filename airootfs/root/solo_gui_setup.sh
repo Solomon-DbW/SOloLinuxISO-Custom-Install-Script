@@ -23,7 +23,7 @@ cd ~
 sudo pacman -S --noconfirm git base-devel
 
 # Install fonts (removed gnome and gnome-tweaks - too heavy for Hyprland setup)
-sudo pacman -S --noconfirm ttf-jetbrains-mono-nerd noto-fonts noto-fonts-emoji noto-fonts-cjk ttf-dejavu jq
+sudo pacman -S --noconfirm fontconfig ttf-jetbrains-mono-nerd noto-fonts noto-fonts-emoji noto-fonts-cjk ttf-dejavu jq
 fc-cache -fv
 
 # Starship prompt installation
