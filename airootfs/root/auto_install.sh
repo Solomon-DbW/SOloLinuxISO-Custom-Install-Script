@@ -149,10 +149,16 @@ mkdir -p /mnt/home/"$USERNAME"
 # 2. Copy the GUI script to the user's future home directory
 #    (Assumes the script is available on the live system at /root/solo_gui_setup.sh)
 cp /root/solo_gui_setup.sh /mnt/home/"$USERNAME"/
+# cp /root/slpm /mnt/home/"$USERNAME"/
+
+mkdir -p /mnt/usr/local/bin
+cp /root/slpm /mnt/usr/local/bin/
+chmod +x /mnt/usr/local/bin/slpm
 
 # 3. Set the ownership (UID 1000 and GID 1000 is almost always the first non-root user)
 #    This ensures the user can execute it after reboot.
 chown 1000:1000 /mnt/home/"$USERNAME"/solo_gui_setup.sh
+# chown 1000:1000 /mnt/home/"$USERNAME"/slpm
 
 # 4. Make the script executable
 chmod +x /mnt/home/"$USERNAME"/solo_gui_setup.sh

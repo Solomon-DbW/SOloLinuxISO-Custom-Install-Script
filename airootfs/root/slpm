@@ -1,0 +1,225 @@
+#!/usr/bin/env bash
+# SLPM - SoloLinux Package Manager (Colourised & Improved)
+
+set -euo pipefail
+IFS=$'\n\t'
+
+# --- SoloLinux enforced /etc/os-release contents ---
+SLPM_OS_RELEASE_ENFORCED='NAME="SoloLinux"
+PRETTY_NAME="SoloLinux"
+ID=sololinux
+ID_LIKE=arch
+BUILD_ID=rolling
+ANSI_COLOR="0;38;2;37;104;151"
+HOME_URL="https://archlinux.org/"
+DOCUMENTATION_URL="https://wiki.archlinux.org/"
+SUPPORT_URL="https://bbs.archlinux.org/"
+BUG_REPORT_URL="https://gitlab.archlinux.org/groups/archlinux/-/issues"
+PRIVACY_POLICY_URL="https://terms.archlinux.org/docs/privacy-policy/"
+LOGO=archlinux-logo'
+
+# --- COLOURS ---
+SL_COLOUR="\e[38;2;37;104;151m"
+SL_BOLD="\e[1m"
+SL_RESET="\e[0m"
+
+# --- Pretty printing ---
+msg() {
+    echo -e "${SL_COLOUR}${SL_BOLD}SLPM:${SL_RESET} $*"
+}
+
+success() {
+    echo -e "${SL_COLOUR}✔${SL_RESET} $*"
+}
+
+error() {
+    echo -e "${SL_COLOUR}${SL_BOLD}✘ ERROR:${SL_RESET} $*" >&2
+}
+
+# --- Paths ---
+SLPM_BIN="$(readlink -f "$0")"
+BACKUP_DIR="/var/lib/slpm"
+LOG_DIR="/var/log/slpm"
+LOG_FILE="$LOG_DIR/slpm-$(date +%Y%m%d-%H%M%S).log"
+OS_RELEASE="/etc/os-release"
+PROTECT_FLAG="$BACKUP_DIR/.protect-os-release"
+
+# --- Basic checks ---
+require_root() {
+    if [[ $EUID -ne 0 ]]; then
+        error "Root privileges required. Run with sudo."
+        exit 1
+    fi
+}
+
+log() {
+    mkdir -p "$LOG_DIR"
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*" >> "$LOG_FILE"
+}
+
+ensure_dirs() {
+    mkdir -p "$BACKUP_DIR" "$LOG_DIR"
+}
+
+# --- ENFORCE /etc/os-release ALWAYS ---
+enforce_os_release() {
+    printf "%s" "$SLPM_OS_RELEASE_ENFORCED" > "$OS_RELEASE"
+    success "SoloLinux identity enforced in /etc/os-release"
+}
+
+# --- Init SLPM ---
+init() {
+    require_root
+    ensure_dirs
+    enforce_os_release
+    msg "Initialised."
+}
+
+# ================================
+#         PACMAN WRAPPERS
+# ================================
+cmd_install() {
+    require_root
+    msg "Installing: $*"
+    log "INSTALL $*"
+    pacman -S --noconfirm "$@"
+    enforce_os_release
+}
+
+cmd_remove() {
+    require_root
+    msg "Removing: $*"
+    log "REMOVE $*"
+    pacman -R "$@"
+    enforce_os_release
+}
+
+cmd_upgrade() {
+    require_root
+    msg "System upgrade in progress..."
+    log "UPGRADE"
+    pacman -Syu --noconfirm
+    enforce_os_release
+}
+
+cmd_search() {
+    msg "Searching for: $*"
+    pacman -Ss "$@"
+}
+
+cmd_info() {
+    msg "Package info: $*"
+    pacman -Si "$@"
+}
+
+cmd_list() {
+    msg "User-installed packages:"
+    pacman -Qe
+}
+
+# ================================
+#      BACKUP / RESTORE
+# ================================
+cmd_backup() {
+    require_root
+    ensure_dirs
+    msg "Backing up: $*"
+    for file in "$@"; do
+        cp -a "$file" "$BACKUP_DIR/"
+        success "Backed up $file"
+    done
+}
+
+cmd_restore() {
+    require_root
+    msg "Restoring: $*"
+    for file in "$@"; do
+        cp -a "$BACKUP_DIR/$(basename "$file")" "$file"
+        success "Restored $file"
+    done
+}
+
+# ================================
+#           PROTECTION
+# ================================
+cmd_protect() {
+    require_root
+    case "$1" in
+        on)
+            touch "$PROTECT_FLAG"
+            msg "os-release protection ENABLED."
+            ;;
+        off)
+            rm -f "$PROTECT_FLAG"
+            msg "os-release protection DISABLED."
+            ;;
+        *)
+            error "Usage: slpm protect {on|off}"
+            exit 1
+            ;;
+    esac
+}
+
+cmd_config() {
+    msg "SLPM Configuration"
+    echo "Backup dir: $BACKUP_DIR"
+    echo "Log dir:    $LOG_DIR"
+    echo "Protect:    $( [[ -f $PROTECT_FLAG ]] && echo ENABLED || echo DISABLED )"
+}
+
+# ================================
+#             HELP
+# ================================
+show_help() {
+echo -e "${SL_COLOUR}${SL_BOLD}SLPM - SoloLinux Package Manager${SL_RESET}
+
+Commands:
+  init                 Initialise SLPM
+  install|i PKG        Install package(s)
+  remove|r PKG         Remove package(s)
+  upgrade|u            Full system upgrade
+  search|s QUERY       Search packages
+  info PKG             Show package info
+  list                 List explicitly installed packages
+
+Tools:
+  backup FILE          Backup a file
+  restore FILE         Restore a file
+  protect on|off       Toggle /etc/os-release protection
+  config               Show configuration
+
+SLPM *always* enforces SoloLinux identity in /etc/os-release.
+"
+}
+
+# ================================
+#           DISPATCHER
+# ================================
+if [[ $# -lt 1 ]]; then
+    show_help
+    exit 0
+fi
+
+cmd="$1"
+shift || true
+
+case "$cmd" in
+    init) init "$@" ;;
+    install|i) cmd_install "$@" ;;
+    remove|r) cmd_remove "$@" ;;
+    upgrade|u) cmd_upgrade "$@" ;;
+    search|s) cmd_search "$@" ;;
+    info) cmd_info "$@" ;;
+    list) cmd_list "$@" ;;
+    backup) cmd_backup "$@" ;;
+    restore) cmd_restore "$@" ;;
+    protect) cmd_protect "$@" ;;
+    config) cmd_config "$@" ;;
+    help|--help|-h) show_help ;;
+    *)
+        error "Unknown command: $cmd"
+        show_help
+        exit 2
+        ;;
+esac
+

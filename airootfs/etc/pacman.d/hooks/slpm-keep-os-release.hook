@@ -1,0 +1,12 @@
+[Trigger]
+Operation = Upgrade
+Operation = Install
+Operation = Remove
+Type = Path
+Target = /etc/os-release
+
+[Action]
+Description = SLPM: restore SoloLinux /etc/os-release after package transaction
+When = PostTransaction
+Exec = /usr/local/bin/slpm-restore-os-release
+
